@@ -72,10 +72,10 @@ async function refreshCatalogue() {
 
 const CONFIG = {
   MIN_PLAYERS: 2, MAX_PLAYERS: 10,
-  DEFAULT_VIDEOS: 3,                                   // nb de vidéos par défaut si non précisé
-  PREVIEW_MS: +process.env.PREVIEW_MS || 6000,        // durée d'affichage de la preview avant les tours
-  GRACE_S: +process.env.GRACE_S || 1.5,               // filet : X s APRÈS le mot sans clic → le serveur coupe
-  NEXT_TURN_MS: +process.env.NEXT_TURN_MS || 2200,    // petit répit entre deux passages
+  DEFAULT_VIDEOS: 3,                                        // nb de vidéos par défaut si non précisé
+  PREVIEW_HOLD_MS: +process.env.PREVIEW_HOLD_MS || 2000,   // temps sur l'image figée (AU mot) avant les tours
+  TURN_SAFETY_MS: +process.env.TURN_SAFETY_MS || 60000,    // FILET anti-blocage : coupe un tour si le client ne répond jamais
+  NEXT_TURN_MS: +process.env.NEXT_TURN_MS || 2200,         // petit répit entre deux passages
 };
 
 const rooms = new Map();
@@ -176,13 +176,14 @@ function nextVideo(room) {
 function startPreview(room) {
   const r = room.r;
   room.phase = 'preview';
-  broadcastPhase(room, 'preview', {
-    videoId: r.video.id,
-    from: r.video.startAt,                      // découverte : on part du même point que les tours (startAt du JSON)
-    until: engine.previewCut(r.video.fatal),   // ← ne révèle pas `fatal`, juste où couper
-  });
+  const until = engine.previewCut(r.video.fatal);          // = fatal (marge 0) : on va JUSQU'AU mot
+  broadcastPhase(room, 'preview', { videoId: r.video.id, from: r.video.startAt, until });
+  // durée DYNAMIQUE : le temps de lire de startAt au mot, + un temps sur l'image figée.
+  const playMs = Math.max(0, until - r.video.startAt) * 1000;
+  const previewMs = playMs + CONFIG.PREVIEW_HOLD_MS;
+  console.log(`[preview] ${r.video.id} : de ${r.video.startAt}s à ${until}s → ${previewMs}ms avant les tours`);
   clearTimeout(room.previewTimer);
-  room.previewTimer = setTimeout(() => startTurn(room), CONFIG.PREVIEW_MS);
+  room.previewTimer = setTimeout(() => startTurn(room), previewMs);
 }
 
 // Lance le tour du joueur actif courant (saute les partis). Pose le filet.
@@ -204,16 +205,16 @@ function startTurn(room) {
     active: activeId,
     activeName: active ? active.name : '?',
     // `youActive` est ajouté par joueur dans broadcastPhase
-    graceMs: Math.round(((r.video.fatal - r.video.startAt) + CONFIG.GRACE_S) * 1000), // indicatif UI
   });
+  console.log(`[turn] actif=${activeId} (${active ? active.name : '?'}) vidéo=${r.video.id} depuis ${r.video.startAt}s`);
 
-  // FILET SERVEUR : si aucun stop `GRACE_S` s APRÈS le mot, on force (= dépassement).
+  // FILET large : la vidéo joue librement (le front l'arrête au clic OU la laisse
+  // finir → stop auto). Ce timer ne sert QUE si un client reste muet trop longtemps.
   clearTimeout(r.timer);
-  const forceMs = ((r.video.fatal - r.video.startAt) + CONFIG.GRACE_S) * 1000;
-  r.timer = setTimeout(() => forceStop(room, activeId), forceMs);
+  r.timer = setTimeout(() => forceStop(room, activeId), CONFIG.TURN_SAFETY_MS);
 }
 
-// Le joueur actif clique STOP.
+// Le joueur actif clique STOP (ou son front envoie stop en fin de vidéo).
 function onStop(ws, clientTime) {
   const room = rooms.get(ws.room);
   if (!room || !room.r || room.phase !== 'player_turn') return;
@@ -223,13 +224,22 @@ function onStop(ws, clientTime) {
   resolveTurn(room, ws.id, clientTime);
 }
 
-// Le filet se déclenche : le joueur n'a pas cliqué (ou s'est déconnecté).
+// Filet anti-blocage : le client n'a jamais répondu → dépassement forcé (malus).
 function forceStop(room, playerId) {
   if (!room.r || room.r.active !== playerId || room.r.stopReceived) return;
-  resolveTurn(room, playerId, null);            // null → autorité serveur → dépassement
+  const r = room.r;
+  r.stopReceived = true;
+  const serverTime = r.video.startAt + (Date.now() - r.goAt) / 1000;
+  const outcome = { time: +serverTime.toFixed(3), points: engine.SCORING.MALUS, overshoot: true };
+  engine.record(r, playerId, outcome);
+  const p = room.players.get(playerId);
+  if (p) p.score += outcome.points;
+  roomBroadcast(room, { type: 'stopped', id: playerId, name: p ? p.name : '?', ...outcome });
+  console.log(`[turn] FILET serveur → ${playerId} : dépassement forcé (${outcome.time}s)`);
+  advanceAfterTurn(room);
 }
 
-// Résout le tour courant, diffuse l'issue, puis enchaîne (joueur suivant ou results).
+// Résout un stop CLIENT (clic ou fin de vidéo), diffuse l'issue, puis enchaîne.
 function resolveTurn(room, playerId, clientTime) {
   const r = room.r;
   r.stopReceived = true;
@@ -238,10 +248,15 @@ function resolveTurn(room, playerId, clientTime) {
   engine.record(r, playerId, outcome);
   const p = room.players.get(playerId);
   if (p) p.score += outcome.points;
-  roomBroadcast(room, { type: 'stopped', id: playerId, name: p ? p.name : '?', time: outcome.time, points: outcome.points, overshoot: outcome.overshoot });
+  roomBroadcast(room, { type: 'stopped', id: playerId, name: p ? p.name : '?', ...outcome });
+  console.log(`[turn] ${playerId} stop@${outcome.time}s pts=${outcome.points} dépassé=${outcome.overshoot}`);
+  advanceAfterTurn(room);
+}
 
-  const isPresent = (id) => room.players.has(id);
-  const next = engine.nextActive(r, isPresent);
+// Joueur suivant, ou résultats si tout le monde a joué cette vidéo.
+function advanceAfterTurn(room) {
+  const r = room.r;
+  const next = engine.nextActive(r, (id) => room.players.has(id));
   if (!next) { setTimeout(() => showResults(room), CONFIG.NEXT_TURN_MS); return; }
   r.active = next;
   setTimeout(() => startTurn(room), CONFIG.NEXT_TURN_MS);              // petit répit puis suivant
@@ -282,10 +297,11 @@ function onLeave(ws) {
     sendRoomState(room);
     return;
   }
-  // si l'actif se casse en plein tour, on ne bloque pas : on résout tout de suite (dépassement)
+  // si l'actif se casse en plein tour, on ne bloque pas : dépassement forcé (pas
+  // de bonus en se déconnectant) et on enchaîne tout de suite.
   if (wasActive && room.r && !room.r.stopReceived) {
     clearTimeout(room.r.timer);
-    return resolveTurn(room, ws.id, null);
+    return forceStop(room, ws.id);
   }
   sendRoomState(room);
 }

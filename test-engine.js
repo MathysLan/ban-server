@@ -55,8 +55,8 @@ check('pA (frôlé) devant pB (dépassement)',
 const cat = [{ id: 'v1', fatal: 5 }, { id: 'v2', fatal: 9 }];
 check('pickVideo évite les déjà vues', e.pickVideo(cat, ['v1']).id === 'v2');
 check('pickVideo repli si tout vu', ['v1', 'v2'].includes(e.pickVideo(cat, ['v1', 'v2']).id));
-check('previewCut coupe avant le mot', e.previewCut(14.850) < 14.850 && e.previewCut(14.850) > 14.0);
-check('previewCut jamais négatif', e.previewCut(0.2) === 0);
+check('previewCut = le mot (marge 0 : on va jusqu\'au fatal)', e.previewCut(14.850) === 14.850);
+check('previewCut jamais négatif', e.previewCut(0.2) >= 0);
 
 // --- ordre aléatoire --------------------------------------------------------
 const base = ['pA', 'pB', 'pC', 'pD'];

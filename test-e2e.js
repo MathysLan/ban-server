@@ -32,7 +32,7 @@ function client() {
   const pa = await a.phase('preview');
   check('preview : videoId présent', typeof pa.videoId === 'string');
   check('preview : `fatal` JAMAIS envoyé', pa.fatal === undefined);
-  check('preview : `until` coupe avant le mot (un nombre)', typeof pa.until === 'number');
+  check('preview : `until` = le mot (un nombre)', typeof pa.until === 'number');
 
   // --- tour 1 : le joueur actif ---
   const t1a = await a.phase('player_turn');

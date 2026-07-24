@@ -31,7 +31,7 @@ function client() {
 
   // 2) le serveur de jeu pointé sur ce catalogue distant (pas de VIDEOS_JSON !)
   const srv = spawn('node', [path.join(__dirname, 'src/server.js')], {
-    env: { ...process.env, PORT: String(BANPORT), PREVIEW_MS: '300', NEXT_TURN_MS: '150', GRACE_S: '0.3',
+    env: { ...process.env, PORT: String(BANPORT), PREVIEW_HOLD_MS: '100', NEXT_TURN_MS: '150', TURN_SAFETY_MS: '600',
       CATALOGUE_URL: `http://localhost:${CATPORT}` },
   });
   srv.stdout.on('data', (d) => process.stdout.write('[srv] ' + d));

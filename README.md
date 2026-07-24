@@ -26,5 +26,10 @@ node test-e2e.js     # partie complète, 2 clients ws
 - `src/videos.js` : catalogue `{ id, fatal, startAt? }`. Le front mappe id→URL (CDN).
 
 ## Réglages (env)
-`PORT`, `PREVIEW_MS`, `NEXT_TURN_MS`, `GRACE_S`. Barème dans `engine-ban.js`
-(`SCORING`, `TOL`, `PREVIEW_MARGIN`).
+`PORT`, `PREVIEW_HOLD_MS` (temps sur l'image figée au mot, défaut 2000),
+`TURN_SAFETY_MS` (filet anti-blocage d'un tour, défaut 60000), `NEXT_TURN_MS`.
+La durée de la preview est DYNAMIQUE (de `startAt` au mot). Barème + marge dans
+`engine-ban.js` (`SCORING`, `TOL`, `PREVIEW_MARGIN` = 0 → preview jusqu'au mot).
+
+## Diagnostic
+Ouvre `http://<serveur>/` : JSON du catalogue réellement chargé (source + `fatal`).

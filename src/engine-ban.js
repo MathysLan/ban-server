@@ -22,9 +22,9 @@ const SCORING = {
 // réellement écoulé côté serveur. Au-delà, on ne fait plus confiance au client.
 const TOL = 0.5;
 
-// Marge de sécurité de la preview (s) : on coupe la découverte un peu AVANT le
-// mot pour que personne ne l'entende pendant le contexte.
-const PREVIEW_MARGIN = 0.6;
+// Marge de la preview (s) : 0 = la découverte va JUSQU'AU mot (choix de Mathys).
+// Augmente-la si tu veux couper un poil avant pour ne pas entendre le mot.
+const PREVIEW_MARGIN = 0;
 
 // --- état d'un round -------------------------------------------------------
 // Un « round » = UNE vidéo jouée par TOUT LE MONDE, chacun son tour.
