@@ -23,7 +23,8 @@
 const http = require('http');
 const { WebSocketServer } = require('ws');
 const engine = require('./engine-ban');
-const VIDEOS = require('./videos');
+// Catalogue : `./videos` par défaut ; surchargeable par VIDEOS_JSON (staging/tests).
+const VIDEOS = process.env.VIDEOS_JSON ? JSON.parse(process.env.VIDEOS_JSON) : require('./videos');
 
 const CONFIG = {
   MIN_PLAYERS: 2, MAX_PLAYERS: 10,
