@@ -23,8 +23,35 @@
 const http = require('http');
 const { WebSocketServer } = require('ws');
 const engine = require('./engine-ban');
-// Catalogue : `./videos` par défaut ; surchargeable par VIDEOS_JSON (staging/tests).
-const VIDEOS = process.env.VIDEOS_JSON ? JSON.parse(process.env.VIDEOS_JSON) : require('./videos');
+
+// --- catalogue de vidéos ---------------------------------------------------
+// Priorité : VIDEOS_JSON (env inline — staging/tests) > CATALOGUE_URL (le
+// videos.json du portfolio, PUBLIC, refetché à chaque partie) > ./videos.js.
+// Le `fatal` vit donc dans le repo front : Mathys édite le JSON + push, aucun
+// redeploy Render. (Contrepartie assumée : le fatal est lisible publiquement.)
+const CATALOGUE_URL = process.env.CATALOGUE_URL || 'https://mathyslan.github.io/games/ban/videos.json';
+const CATALOGUE_TTL = 10000; // ms : on ne refetch pas plus d'une fois par 10 s
+let catalogue = sanitizeCatalogue(require('./videos')); // repli embarqué au boot
+let catalogueAt = 0;
+
+// Ne garde que des entrées saines : id non vide + fatal numérique > 0.
+function sanitizeCatalogue(arr) {
+  return (Array.isArray(arr) ? arr : [])
+    .map((v) => ({ id: String((v && v.id) || '').trim(), fatal: Number(v && v.fatal), startAt: Number(v && v.startAt) || 0 }))
+    .filter((v) => v.id && Number.isFinite(v.fatal) && v.fatal > 0);
+}
+
+async function refreshCatalogue() {
+  if (process.env.VIDEOS_JSON) { catalogue = sanitizeCatalogue(JSON.parse(process.env.VIDEOS_JSON)); return; }
+  if (Date.now() - catalogueAt < CATALOGUE_TTL) return;       // cache court : pas de spam
+  try {
+    const res = await fetch(CATALOGUE_URL, { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const clean = sanitizeCatalogue(await res.json());
+    if (clean.length) { catalogue = clean; catalogueAt = Date.now(); }
+    else console.warn('catalogue: vide/invalide, on garde le précédent');
+  } catch (e) { console.warn('catalogue: fetch KO, on garde le précédent —', e.message); }
+}
 
 const CONFIG = {
   MIN_PLAYERS: 2, MAX_PLAYERS: 10,
@@ -84,15 +111,18 @@ function onJoin(ws, { name, code, avatar }) {
   sendRoomState(room);
 }
 
-function onStart(ws, msg) {
+async function onStart(ws, msg) {
   const room = rooms.get(ws.room);
   if (!room) return sendError(ws, 'aucune room');
   if (ws.id !== room.hostId) return sendError(ws, 'seul le MJ peut lancer');
   if (room.phase !== 'lobby') return sendError(ws, 'partie déjà lancée');
   if (room.players.size < CONFIG.MIN_PLAYERS) return sendError(ws, `il faut au moins ${CONFIG.MIN_PLAYERS} joueurs`);
   for (const p of room.players.values()) p.score = 0;
+  room.phase = 'starting';                                   // verrou anti double-clic pendant le fetch
+  await refreshCatalogue();
+  if (!catalogue.length) { room.phase = 'lobby'; return sendError(ws, 'aucune vidéo dans le catalogue'); }
   const asked = Math.trunc(+((msg && msg.videos)) || 0);
-  room.videosToPlay = asked > 0 ? Math.min(VIDEOS.length, asked) : Math.min(CONFIG.DEFAULT_VIDEOS, VIDEOS.length);
+  room.videosToPlay = asked > 0 ? Math.min(catalogue.length, asked) : Math.min(CONFIG.DEFAULT_VIDEOS, catalogue.length);
   room.videoNo = 0; room.usedVideos = [];
   nextVideo(room);
 }
@@ -102,7 +132,7 @@ function nextVideo(room) {
   purge(room);
   if (room.videoNo >= room.videosToPlay) return endGame(room);
   room.videoNo++;
-  const video = engine.pickVideo(VIDEOS, room.usedVideos);
+  const video = engine.pickVideo(catalogue, room.usedVideos);
   room.usedVideos.push(video.id);
   const order = engine.shuffle([...room.players.keys()]);   // ordre de passage tiré au hasard À CHAQUE vidéo
   room.r = engine.createRound(video, order);
@@ -254,4 +284,7 @@ function sendJson(ws, obj) { if (ws.readyState === ws.OPEN) ws.send(JSON.stringi
 const sendError = (ws, message) => sendJson(ws, { type: 'error', message });
 
 const PORT = process.env.PORT || 8080;
-server.listen(PORT, () => console.log(`ban-server à l'écoute sur :${PORT}`));
+server.listen(PORT, () => {
+  console.log(`ban-server à l'écoute sur :${PORT}`);
+  refreshCatalogue().then(() => console.log(`catalogue : ${catalogue.length} vidéo(s)`)); // préchauffe le cache
+});
