@@ -1,0 +1,8 @@
+{
+  "name": "ban-server",
+  "version": "1.0.0",
+  "description": "Serveur arbitre du Jeu du Ban (Node + ws)",
+  "main": "src/server.js",
+  "scripts": { "start": "node src/server.js", "test": "node test-engine.js && node test-e2e.js" },
+  "dependencies": { "ws": "^8.18.0" }
+}
