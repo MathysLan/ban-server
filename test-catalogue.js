@@ -25,7 +25,7 @@ function client() {
   const cat = http.createServer((_req, res) => {
     served++;
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify([{ id: 'cat_distant', fatal: 2.0, startAt: 0 }]));
+    res.end(JSON.stringify([{ id: 'cat_distant', fatal: 5.0, startAt: 3.0 }]));
   });
   await new Promise((r) => cat.listen(CATPORT, r));
 
@@ -46,9 +46,10 @@ function client() {
   a.send({ action: 'start', videos: 1 });
   const pv = await a.until((m) => m.type === 'phase' && m.phase === 'preview');
   check('la partie utilise le catalogue distant (id)', pv.videoId === 'cat_distant');
+  check('preview : démarre au startAt du JSON (from === 3.0)', pv.from === 3.0);
   check('preview : fatal toujours caché', pv.fatal === undefined);
   const res = await a.until((m) => m.type === 'phase' && m.phase === 'results');
-  check('results : fatal du catalogue distant révélé (2.0)', res.fatal === 2.0);
+  check('results : fatal du catalogue distant révélé (5.0)', res.fatal === 5.0);
 
   a.ws.close(); b.ws.close();
   cat.close(); srv.kill('SIGKILL');

@@ -146,7 +146,7 @@ function startPreview(room) {
   room.phase = 'preview';
   broadcastPhase(room, 'preview', {
     videoId: r.video.id,
-    from: 0,
+    from: r.video.startAt,                      // découverte : on part du même point que les tours (startAt du JSON)
     until: engine.previewCut(r.video.fatal),   // ← ne révèle pas `fatal`, juste où couper
   });
   clearTimeout(room.previewTimer);
