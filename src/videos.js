@@ -1,15 +1,10 @@
-// Catalogue de REPLI du Jeu du Ban (embarqué). En prod, le serveur charge le
-// vrai catalogue depuis le portfolio : https://mathyslan.github.io/games/ban/videos.json
-// (refetché à chaque partie). Ce fichier ne sert que si le fetch échoue au boot.
+// Repli embarqué du Jeu du Ban — VOLONTAIREMENT VIDE.
 //
-// Le serveur ne connaît QUE l'id et le `fatal` (l'instant du mot interdit, en
-// secondes). Les vidéos physiques vivent sur R2 : le front mappe id -> URL
-// (<id>.mp4). `startAt` (optionnel) = « run-up » : au tour de chacun, la vidéo
-// repart de là (défaut 0).
-module.exports = [
-  { id: 'vid_01', fatal: 6.400,  startAt: 0 },
-  { id: 'vid_02', fatal: 11.900, startAt: 4 },
-  { id: 'vid_03', fatal: 14.850, startAt: 8 },
-  { id: 'vid_04', fatal: 3.250,  startAt: 0 },
-  { id: 'vid_05', fatal: 22.100, startAt: 15 },
-];
+// Le vrai catalogue vit dans le portfolio : games/ban/videos.json, que le
+// serveur fetch depuis https://mathyslan.github.io/games/ban/videos.json (au
+// boot et à chaque partie, cache 10 s).
+//
+// On garde ce repli vide EXPRÈS : si le fetch échoue, le serveur répond
+// « aucune vidéo dans le catalogue » (erreur franche) au lieu de jouer une
+// vraie vidéo avec un mauvais `fatal` en silence. Ne rien mettre ici.
+module.exports = [];

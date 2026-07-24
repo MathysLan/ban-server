@@ -31,8 +31,13 @@ const engine = require('./engine-ban');
 // redeploy Render. (Contrepartie assumée : le fatal est lisible publiquement.)
 const CATALOGUE_URL = process.env.CATALOGUE_URL || 'https://mathyslan.github.io/games/ban/videos.json';
 const CATALOGUE_TTL = 10000; // ms : on ne refetch pas plus d'une fois par 10 s
-let catalogue = sanitizeCatalogue(require('./videos')); // repli embarqué au boot
+// Repli embarqué VOLONTAIREMENT VIDE : si le fetch échoue, on veut une erreur
+// franche (« aucune vidéo ») plutôt que de jouer une vraie vidéo avec un faux
+// `fatal` en silence. Le catalogue réel vient toujours de videos.json.
+let catalogue = sanitizeCatalogue(require('./videos'));
 let catalogueAt = 0;
+let catalogueSource = 'repli (videos.js)';   // d'où vient le catalogue courant
+let catalogueError = null;                    // dernière erreur de fetch, pour diagnostic
 
 // Ne garde que des entrées saines : id non vide + fatal numérique > 0.
 function sanitizeCatalogue(arr) {
@@ -42,15 +47,27 @@ function sanitizeCatalogue(arr) {
 }
 
 async function refreshCatalogue() {
-  if (process.env.VIDEOS_JSON) { catalogue = sanitizeCatalogue(JSON.parse(process.env.VIDEOS_JSON)); return; }
+  if (process.env.VIDEOS_JSON) {
+    catalogue = sanitizeCatalogue(JSON.parse(process.env.VIDEOS_JSON));
+    catalogueSource = 'VIDEOS_JSON (env)'; catalogueError = null; return;
+  }
   if (Date.now() - catalogueAt < CATALOGUE_TTL) return;       // cache court : pas de spam
+  if (typeof fetch !== 'function') {                          // Node < 18 : pas de fetch global
+    catalogueError = 'fetch indisponible (Node < 18 ?)';
+    console.error('catalogue:', catalogueError); return;
+  }
   try {
     const res = await fetch(CATALOGUE_URL, { cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const clean = sanitizeCatalogue(await res.json());
-    if (clean.length) { catalogue = clean; catalogueAt = Date.now(); }
-    else console.warn('catalogue: vide/invalide, on garde le précédent');
-  } catch (e) { console.warn('catalogue: fetch KO, on garde le précédent —', e.message); }
+    if (!clean.length) throw new Error('JSON vide ou invalide (id + fatal>0 requis)');
+    catalogue = clean; catalogueAt = Date.now();
+    catalogueSource = CATALOGUE_URL; catalogueError = null;
+    console.log(`catalogue: ${clean.length} vidéo(s) depuis ${CATALOGUE_URL}`);
+  } catch (e) {
+    catalogueError = e.message;
+    console.error(`catalogue: fetch KO (${CATALOGUE_URL}) — ${e.message} — catalogue courant conservé (${catalogue.length} vidéo(s))`);
+  }
 }
 
 const CONFIG = {
@@ -64,7 +81,22 @@ const CONFIG = {
 const rooms = new Map();
 let nextId = 1;
 
-const server = http.createServer((_req, res) => { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('ban-server OK\n'); });
+// Endpoint de diagnostic : montre le catalogue RÉELLEMENT chargé (source + fatal).
+// Ouvre https://<serveur>/ dans le navigateur pour vérifier ce que le serveur voit.
+// (Le `fatal` est public par choix, donc l'exposer ici ne change rien.)
+const server = http.createServer((_req, res) => {
+  const body = {
+    ok: catalogue.length > 0,
+    catalogueSource,
+    catalogueUrl: CATALOGUE_URL,
+    catalogueCount: catalogue.length,
+    lastError: catalogueError,
+    videos: catalogue,   // [{ id, fatal, startAt }]
+    hint: catalogue.length ? 'ok' : 'catalogue vide : videos.json injoignable/invalide ?',
+  };
+  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify(body, null, 2));
+});
 const wss = new WebSocketServer({ server });
 
 const CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
