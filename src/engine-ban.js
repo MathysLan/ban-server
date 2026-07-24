@@ -50,6 +50,18 @@ function pickVideo(videos, usedIds, rng = Math.random) {
   return pool[Math.floor(rng() * pool.length)];
 }
 
+// Mélange (Fisher-Yates) — rng injectable pour rester testable. Sert à tirer un
+// ordre de passage aléatoire À CHAQUE vidéo, pour que l'avantage des derniers
+// (qui ont entendu les tours précédents) ne retombe pas toujours sur les mêmes.
+function shuffle(arr, rng = Math.random) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 // Où couper la preview : juste avant le mot, sans jamais le laisser sortir.
 const previewCut = (fatal, margin = PREVIEW_MARGIN) => Math.max(0, +(fatal - margin).toFixed(3));
 
@@ -119,7 +131,7 @@ function roundRanking(round) {
 
 module.exports = {
   SCORING, TOL, PREVIEW_MARGIN,
-  createRound, pickVideo, previewCut,
+  createRound, pickVideo, shuffle, previewCut,
   authoritativeTime, scoreStop, resolveTurn, record,
   firstActive, nextActive, roundRanking,
 };

@@ -28,4 +28,3 @@ node test-e2e.js     # partie complète, 2 clients ws
 ## Réglages (env)
 `PORT`, `PREVIEW_MS`, `NEXT_TURN_MS`, `GRACE_S`. Barème dans `engine-ban.js`
 (`SCORING`, `TOL`, `PREVIEW_MARGIN`).
-# ban-server

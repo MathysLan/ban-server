@@ -103,7 +103,7 @@ function nextVideo(room) {
   room.videoNo++;
   const video = engine.pickVideo(VIDEOS, room.usedVideos);
   room.usedVideos.push(video.id);
-  const order = [...room.players.keys()];   // ordre de passage = tous les présents
+  const order = engine.shuffle([...room.players.keys()]);   // ordre de passage tiré au hasard À CHAQUE vidéo
   room.r = engine.createRound(video, order);
   startPreview(room);
 }

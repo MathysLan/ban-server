@@ -58,5 +58,14 @@ check('pickVideo repli si tout vu', ['v1', 'v2'].includes(e.pickVideo(cat, ['v1'
 check('previewCut coupe avant le mot', e.previewCut(14.850) < 14.850 && e.previewCut(14.850) > 14.0);
 check('previewCut jamais négatif', e.previewCut(0.2) === 0);
 
+// --- ordre aléatoire --------------------------------------------------------
+const base = ['pA', 'pB', 'pC', 'pD'];
+const mixed = e.shuffle(base);
+check('shuffle : mêmes joueurs, aucun perdu', [...mixed].sort().join() === [...base].sort().join());
+check('shuffle : ne mute pas le tableau source', base.join() === 'pA,pB,pC,pD');
+// sur 200 tirages, la 1re position n'est pas toujours la même (ordre bien brassé)
+const firsts = new Set(Array.from({ length: 200 }, () => e.shuffle(base)[0]));
+check('shuffle : le 1er passage varie', firsts.size >= 3);
+
 console.log(f === 0 ? '\nTOUS LES TESTS PASSENT' : `\n${f} test(s) échoué(s)`);
 process.exit(f === 0 ? 0 : 1);
