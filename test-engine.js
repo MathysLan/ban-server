@@ -5,19 +5,15 @@ let f = 0; const check = (l, c) => { console.log((c ? 'PASS' : 'FAIL') + ' - ' +
 const FATAL = 14.850;
 const cfg = e.SCORING;
 
-// --- scoring ---------------------------------------------------------------
+// --- scoring (bandes fines) ------------------------------------------------
+const top = cfg.BANDS[0].pts, last = cfg.BANDS[cfg.BANDS.length - 1];
 check('dépassement pile sur le mot = malus', e.scoreStop(FATAL, 14.850) === cfg.MALUS);
 check('dépassement après le mot = malus', e.scoreStop(FATAL, 15.2) === cfg.MALUS);
-check('frôlé (écart ~0) ≈ MAX', e.scoreStop(FATAL, 14.849) >= cfg.MAX - 1);
-check('arrêt très prudent (écart >= WINDOW) = MIN', e.scoreStop(FATAL, 14.850 - cfg.WINDOW - 3) === cfg.MIN);
-// proportionnalité : plus on est près, plus on marque
-const near = e.scoreStop(FATAL, 14.850 - 0.5);
-const far = e.scoreStop(FATAL, 14.850 - 3.0);
-check('plus près = plus de points', near > far);
-check('score dans la fenêtre borné [MIN..MAX]', near <= cfg.MAX && far >= cfg.MIN);
-// point milieu de la fenêtre ≈ moitié de l'amplitude
-const mid = e.scoreStop(FATAL, FATAL - cfg.WINDOW / 2);
-check('milieu de fenêtre ≈ moitié du barème', Math.abs(mid - (cfg.MIN + (cfg.MAX - cfg.MIN) / 2)) <= 1);
+check('frôlé (< 1re bande) = max de points', e.scoreStop(FATAL, FATAL - cfg.BANDS[0].max + 0.01) === top);
+check('trop tôt (au-delà de la dernière bande) = 0', e.scoreStop(FATAL, FATAL - last.max - 1) === 0);
+// dégressif : plus on est près, plus on marque
+check('plus près = plus (ou égal) de points', e.scoreStop(FATAL, FATAL - 0.05) >= e.scoreStop(FATAL, FATAL - 0.4));
+check('bornes de bande respectées', e.scoreStop(FATAL, FATAL - cfg.BANDS[0].max) === top);
 
 // --- temps qui fait foi (anti-triche) --------------------------------------
 check('annonce crédible (latence) → on garde le client', e.authoritativeTime(14.30, 14.55) === 14.30);
@@ -28,7 +24,7 @@ check('mentir en prétendant la vidéo plus loin → recalé', e.authoritativeTi
 
 // resolveTurn : cohérence temps/points/overshoot
 const round = e.createRound({ id: 'vid_03', fatal: FATAL, startAt: 0 }, ['pA', 'pB', 'pC']);
-let out = e.resolveTurn(round, 14.30, 14.45);  // honnête, sous le mot
+let out = e.resolveTurn(round, 14.80, 14.82);  // honnête, tout près du mot
 check('resolveTurn honnête : pas de dépassement', out.overshoot === false && out.points > 0);
 out = e.resolveTurn(round, null, 16.0);        // timeout serveur
 check('resolveTurn timeout : dépassement + malus', out.overshoot === true && out.points === cfg.MALUS);
@@ -37,7 +33,7 @@ check('resolveTurn timeout : dépassement + malus', out.overshoot === true && ou
 const all = new Set(['pA', 'pB', 'pC']);
 const present = (id) => all.has(id);
 check('premier actif = pA', e.firstActive(round, present) === 'pA');
-e.record(round, 'pA', e.resolveTurn(round, 14.2, 14.3));
+e.record(round, 'pA', e.resolveTurn(round, 14.80, 14.82));   // pA tout près (marque)
 check('2e actif = pB', e.nextActive(round, present) === 'pB');
 e.record(round, 'pB', e.resolveTurn(round, null, 15.9));   // pB dépasse
 // pC se déconnecte avant son tour → on doit le sauter et finir le round

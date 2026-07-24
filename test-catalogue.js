@@ -48,7 +48,14 @@ function client() {
   check('la partie utilise le catalogue distant (id)', pv.videoId === 'cat_distant');
   check('preview : démarre au startAt du JSON (from === 3.0)', pv.from === 3.0);
   check('preview : fatal toujours caché', pv.fatal === undefined);
-  const res = await a.until((m) => m.type === 'phase' && m.phase === 'results');
+  // le MJ pilote : on avance jusqu'aux résultats (les 2 tours partent au filet serveur)
+  const nextPhase = (p) => a.until((m) => m.type === 'phase' && m.phase === p);
+  a.send({ action: 'next' }); await nextPhase('turn');           // tour 1
+  a.send({ action: 'play' }); await a.until((m) => m.type === 'stopped');
+  a.send({ action: 'next' }); await nextPhase('turn');           // tour 2
+  a.send({ action: 'play' }); await a.until((m) => m.type === 'stopped');
+  a.send({ action: 'next' });
+  const res = await nextPhase('results');
   check('results : fatal du catalogue distant révélé (5.0)', res.fatal === 5.0);
 
   a.ws.close(); b.ws.close();

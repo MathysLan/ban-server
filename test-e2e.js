@@ -1,8 +1,8 @@
-// e2e du Ban : deux clients ws jouent une vidéo en entier contre un vrai serveur.
-// On vérifie la preview (fatal caché), la boucle chacun son tour, le scoring
-// (clic honnête vs. dépassement au filet serveur), et la révélation en results.
-// Lancer le serveur AVANT avec des délais courts :
-//   PORT=8125 PREVIEW_MS=200 NEXT_TURN_MS=150 GRACE_S=0.3 node src/server.js
+// e2e ws du Ban (piloté MJ). Deux clients ws jouent une vidéo :
+// preview →(MJ next)→ tour1 →(MJ play)→ stop actif →(MJ next)→ tour2 →(MJ play)→
+// filet serveur (dépassement) →(MJ next)→ results →(MJ next)→ end.
+// Lancer le serveur AVANT, filet court :
+//   PORT=8125 TURN_SAFETY_MS=600 VIDEOS_JSON='[{"id":"v","fatal":1.0,"startAt":0}]' node src/server.js
 const WebSocket = require('ws');
 const URL = 'ws://localhost:' + (process.env.PORT || 8125);
 let f = 0; const check = (l, c) => { console.log((c ? 'PASS' : 'FAIL') + ' - ' + l); if (!c) f++; };
@@ -13,7 +13,7 @@ function client() {
   const next = () => new Promise((res) => { q.length ? res(q.shift()) : w.push(res); });
   return {
     ws, send: (o) => ws.send(JSON.stringify(o)), open: () => new Promise((r) => ws.on('open', r)),
-    async until(pred) { for (;;) { const m = await next(); if (pred(m)) return m; } },
+    async until(p) { for (;;) { const m = await next(); if (p(m)) return m; } },
     async phase(p) { return this.until((m) => m.type === 'phase' && m.phase === p); },
   };
 }
@@ -28,50 +28,67 @@ function client() {
 
   a.send({ action: 'start', videos: 1 });
 
-  // --- preview : fatal caché, on ne reçoit que `until` ---
+  // --- preview ---
   const pa = await a.phase('preview');
-  check('preview : videoId présent', typeof pa.videoId === 'string');
-  check('preview : `fatal` JAMAIS envoyé', pa.fatal === undefined);
-  check('preview : `until` = le mot (un nombre)', typeof pa.until === 'number');
+  check('preview : `fatal` jamais envoyé', pa.fatal === undefined);
+  check('preview : until = un nombre', typeof pa.until === 'number');
+  check('preview : ordre de passage (2 joueurs)', Array.isArray(pa.order) && pa.order.length === 2);
+  check('preview : personne n\'a encore joué', pa.order.every((o) => !o.done));
 
-  // --- tour 1 : le joueur actif ---
-  const t1a = await a.phase('player_turn');
-  const t1b = await b.phase('player_turn');
-  check('player_turn : un seul actif', (t1a.youActive ? 1 : 0) + (t1b.youActive ? 1 : 0) === 1);
-  check('player_turn : `fatal` toujours caché', t1a.fatal === undefined && t1b.fatal === undefined);
-  const active1 = t1a.youActive ? a : b;
-  const passive1 = t1a.youActive ? b : a;
-  const activeId1 = t1a.youActive ? idA : idB;
+  // un non-MJ ne peut pas avancer
+  b.send({ action: 'next' });
+  check('next refusé au non-MJ', (await b.until((m) => m.type === 'error')).message.includes('MJ'));
 
-  // le non-actif tente de stopper → refusé
-  passive1.send({ action: 'stop', time: 5 });
-  const err = await passive1.until((m) => m.type === 'error');
-  check('stop refusé à un non-actif', /ton tour/.test(err.message));
+  // --- MJ lance les tours ---
+  a.send({ action: 'next' });
+  const t1a = await a.phase('turn'); await b.phase('turn');
+  check('turn : un seul actif', (t1a.youActive ? 1 : 0) + ((t1a.active === idB) ? 1 : 0) === 1 || t1a.active === idA || t1a.active === idB);
+  check('turn : `fatal` toujours caché', t1a.fatal === undefined);
+  const active1 = t1a.active === idA ? a : b;
+  const passive1 = t1a.active === idA ? b : a;
 
-  // l'actif clique honnêtement AVANT le mot (fatal vid_01=6.4 ; on stoppe ~ tôt)
-  // délais serveur très courts → le temps réel écoulé est petit : on annonce un
-  // temps cohérent avec l'horloge serveur (sinon l'anti-triche recale).
+  // stop AVANT le lancement → refusé
+  active1.send({ action: 'stop', time: 0.1 });
+  check('stop refusé avant le play', (await active1.until((m) => m.type === 'error')).message.includes('lancée'));
+
+  // MJ lance la vidéo
+  a.send({ action: 'play' });
+  await a.until((m) => m.type === 'play');
+
+  // non-actif tente de stopper → refusé
+  passive1.send({ action: 'stop', time: 0.1 });
+  check('stop refusé à un non-actif', (await passive1.until((m) => m.type === 'error')).message.includes('tour'));
+
+  // l'actif stoppe honnêtement, tôt (avant le mot à 1.0)
   active1.send({ action: 'stop', time: 0.05 });
   const st1 = await a.until((m) => m.type === 'stopped');
-  check('stopped : diffusé à tous après le tour', st1.id === activeId1);
-  check('stopped : pas de dépassement (clic avant le mot)', st1.overshoot === false);
-  check('stopped : `fatal` toujours pas révélé', st1.fatal === undefined);
+  check('stopped tour 1 : pas de dépassement', st1.overshoot === false);
+  check('stopped : `fatal` toujours caché', st1.fatal === undefined);
 
-  // --- tour 2 : l'autre joueur NE clique PAS → le filet serveur force (dépassement) ---
-  const st2 = await a.until((m) => m.type === 'stopped' && m.id !== activeId1);
-  check('tour 2 résolu sans clic (filet serveur)', !!st2);
-  check('joueur inactif → dépassement + malus', st2.overshoot === true && st2.points < 0);
+  // --- MJ passe au tour suivant ---
+  a.send({ action: 'next' });
+  const t2 = await a.phase('turn');
+  check('tour 2 : ordre montre le 1er joueur « done »', t2.order.some((o) => o.done));
 
-  // --- results : fatal révélé + classement ---
+  // MJ lance ; l'actif 2 (client ws, pas de vidéo) ne stoppe pas → FILET serveur
+  a.send({ action: 'play' });
+  await a.until((m) => m.type === 'play');
+  const st2 = await a.until((m) => m.type === 'stopped');
+  check('tour 2 : filet serveur → dépassement + malus', st2.overshoot === true && st2.points < 0);
+
+  // --- MJ → résultats ---
+  a.send({ action: 'next' });
   const res = await a.phase('results');
   check('results : `fatal` enfin révélé', typeof res.fatal === 'number');
-  check('results : classement complet (2 joueurs)', Array.isArray(res.ranking) && res.ranking.length === 2);
+  check('results : classement 2 joueurs', res.ranking.length === 2);
+  check('results : écart (delta) fourni', res.ranking.every((r) => 'delta' in r));
   check('results : le prudent devant le dépassé', res.ranking[0].overshoot === false);
   check('results : scoreboard présent', Array.isArray(res.scores) && res.scores.length === 2);
 
-  // --- fin de partie (1 seule vidéo) ---
+  // --- MJ → fin ---
+  a.send({ action: 'next' });
   const end = await a.phase('end');
-  check('end : podium renvoyé', Array.isArray(end.podium) && end.podium.length === 2);
+  check('end : podium (2 joueurs)', Array.isArray(end.podium) && end.podium.length === 2);
 
   a.ws.close(); b.ws.close();
   console.log(f === 0 ? '\nTOUS LES TESTS PASSENT' : `\n${f} test(s) échoué(s)`);

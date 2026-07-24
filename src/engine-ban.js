@@ -11,11 +11,15 @@
 // jamais aux clients avant la phase `results`. Le moteur ne fait que calculer.
 
 // --- réglages (exportés → tunables + testables) ----------------------------
+// Barème RESSERRÉ au centième : le jeu se joue au frame près. On prend la 1re
+// bande dont l'écart au mot (fatal - time, en secondes) est <=. Tunable.
 const SCORING = {
-  MAX: 100,      // score si on frôle le mot (écart → 0)
-  MIN: 5,        // score plancher : arrêt honnête mais très prudent
-  MALUS: -50,    // le mot est sorti (time >= fatal) : ça pique
-  WINDOW: 5.0,   // zone de scoring : au-delà de 5 s avant le mot, tu joues petit bras → MIN
+  MALUS: -1,     // le mot est sorti (time >= fatal) : ça coûte un point
+  BANDS: [
+    { max: 0.10, pts: 3 },   // < 100 ms avant le mot : parfait
+    { max: 0.25, pts: 2 },   // < 250 ms
+    { max: 0.50, pts: 1 },   // < 500 ms
+  ],
 };
 
 // Tolérance anti-triche (s) entre le temps annoncé par le client et le temps
@@ -36,10 +40,11 @@ function createRound(video, order) {
     order: [...order],       // ordre de passage (tous les joueurs présents)
     turnIndex: 0,            // pointeur « chacun son tour »
     active: null,           // id du joueur dont c'est le tour
+    playing: false,         // la vidéo a-t-elle été lancée par le MJ ?
     goAt: 0,                // Date.now() du top départ (posé par server.js)
     stopReceived: false,    // garde-fou : un seul stop traité par tour
     timer: null,            // handle du setTimeout filet (posé par server.js)
-    results: new Map(),     // playerId -> { time, points, overshoot }
+    results: new Map(),     // playerId -> { time, points, overshoot, skipped }
   };
 }
 
@@ -79,14 +84,13 @@ function authoritativeTime(clientTime, serverTime, tol = TOL) {
   return Math.max(0, t);                                    // annonce crédible → on la garde
 }
 
-// Points d'un arrêt. Malus si le mot est sorti, sinon proportionnel à la
-// proximité : plus l'écart `fatal - time` est petit, plus le score grimpe.
+// Points d'un arrêt. Malus si le mot est sorti, sinon la 1re bande dont l'écart
+// au mot (fatal - time) est <=. Plus tu es près, plus tu marques.
 function scoreStop(fatal, time, cfg = SCORING) {
   if (time >= fatal) return cfg.MALUS;                     // le mot a été prononcé
   const ecart = fatal - time;
-  if (ecart >= cfg.WINDOW) return cfg.MIN;                 // trop tôt, prudent
-  const proximity = 1 - ecart / cfg.WINDOW;               // 0..1 (1 = frôlé)
-  return Math.round(cfg.MIN + (cfg.MAX - cfg.MIN) * proximity);
+  for (const b of cfg.BANDS) if (ecart <= b.max) return b.pts;
+  return 0;                                                // trop tôt : rien
 }
 
 // Résout le tour du joueur actif : renvoie le temps retenu, les points et le
