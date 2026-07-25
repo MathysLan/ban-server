@@ -40,7 +40,8 @@ function createRound(video, order) {
     order: [...order],       // ordre de passage (tous les joueurs présents)
     turnIndex: 0,            // pointeur « chacun son tour »
     active: null,           // id du joueur dont c'est le tour
-    playing: false,         // la vidéo a-t-elle été lancée par le MJ ?
+    previewPlaying: false,  // la découverte a-t-elle été lancée par le MJ ?
+    playing: false,         // la vidéo du tour a-t-elle été lancée (MJ ou joueur actif) ?
     goAt: 0,                // Date.now() du top départ (posé par server.js)
     stopReceived: false,    // garde-fou : un seul stop traité par tour
     timer: null,            // handle du setTimeout filet (posé par server.js)

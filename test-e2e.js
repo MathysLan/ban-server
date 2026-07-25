@@ -39,6 +39,13 @@ function client() {
   b.send({ action: 'next' });
   check('next refusé au non-MJ', (await b.until((m) => m.type === 'error')).message.includes('MJ'));
 
+  // découverte : seul le MJ la lance
+  b.send({ action: 'play' });
+  check('découverte : play refusé au non-MJ', (await b.until((m) => m.type === 'error')).message.includes('MJ'));
+  a.send({ action: 'play' });
+  await a.until((m) => m.type === 'play');
+  check('découverte : le MJ la lance', true);
+
   // --- MJ lance les tours ---
   a.send({ action: 'next' });
   const t1a = await a.phase('turn'); await b.phase('turn');
@@ -51,9 +58,16 @@ function client() {
   active1.send({ action: 'stop', time: 0.1 });
   check('stop refusé avant le play', (await active1.until((m) => m.type === 'error')).message.includes('lancée'));
 
-  // MJ lance la vidéo
-  a.send({ action: 'play' });
+  // un joueur ni actif ni MJ ne peut pas lancer la vidéo (b n'est jamais MJ ici)
+  if (passive1 === b) {
+    b.send({ action: 'play' });
+    check('play refusé à un joueur ni actif ni MJ', (await b.until((m) => m.type === 'error')).message.includes('actif'));
+  }
+
+  // LE JOUEUR ACTIF lance lui-même sa vidéo
+  active1.send({ action: 'play' });
   await a.until((m) => m.type === 'play');
+  check('le joueur actif lance sa propre vidéo', true);
 
   // non-actif tente de stopper → refusé
   passive1.send({ action: 'stop', time: 0.1 });

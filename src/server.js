@@ -157,18 +157,31 @@ function onNext(ws) {
   return sendError(ws, 'rien à faire ici');
 }
 
-// Le MJ lance la vidéo du tour courant (top départ commun à tous).
+// Lancement de la vidéo (top départ commun à tous).
+//  - phase preview : le MJ lance la découverte
+//  - phase turn    : LE JOUEUR ACTIF lance sa vidéo (le MJ peut aussi, filet)
 function onPlay(ws) {
   const room = rooms.get(ws.room);
-  if (!room || room.phase !== 'turn' || !room.r) return;
-  if (ws.id !== room.hostId) return sendError(ws, 'seul le MJ lance la vidéo');
+  if (!room || !room.r) return;
   const r = room.r;
+
+  if (room.phase === 'preview') {
+    if (ws.id !== room.hostId) return sendError(ws, 'seul le MJ lance la découverte');
+    if (r.previewPlaying) return;
+    r.previewPlaying = true;
+    roomBroadcast(room, { type: 'play' });
+    console.log('[preview] MJ lance la découverte');
+    return;
+  }
+
+  if (room.phase !== 'turn') return;
+  if (ws.id !== r.active && ws.id !== room.hostId) return sendError(ws, 'seul le joueur actif lance sa vidéo');
   if (r.playing || r.stopReceived) return;
   r.playing = true; r.goAt = Date.now();
   roomBroadcast(room, { type: 'play' });
   clearTimeout(r.timer);
   r.timer = setTimeout(() => forceStop(room, r.active), CONFIG.TURN_SAFETY_MS);
-  console.log(`[turn] MJ lance la vidéo (actif=${r.active})`);
+  console.log(`[turn] vidéo lancée par ${ws.id === r.active ? 'le joueur actif' : 'le MJ'} (actif=${r.active})`);
 }
 
 // Le MJ passe le joueur actif (0 point, pas de malus).
