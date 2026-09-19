@@ -12,7 +12,7 @@ function client() {
   ws.on('message', (raw) => { const m = JSON.parse(raw); const r = w.shift(); r ? r(m) : q.push(m); });
   const next = () => new Promise((res) => { q.length ? res(q.shift()) : w.push(res); });
   return {
-    ws, send: (o) => ws.send(JSON.stringify(o)), open: () => new Promise((r) => ws.on('open', r)),
+    ws, send: (o) => ws.send(JSON.stringify(o)), open: () => (ws.readyState === 1 ? Promise.resolve() : new Promise((r) => ws.once('open', r))),
     async until(p) { for (;;) { const m = await next(); if (p(m)) return m; } },
     async phase(p) { return this.until((m) => m.type === 'phase' && m.phase === p); },
   };

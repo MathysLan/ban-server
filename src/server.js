@@ -10,6 +10,7 @@
 //
 // Protocole (JSON) :
 //   client → { action:'join', name, code?, avatar? }
+//            avatar = { kind:'emoji', emoji } | { kind:'image', emoji, src } — revalidé par src/avatar.js
 //   client → { action:'start', videos? }        host, lobby
 //   client → { action:'next' }                  host : avance (preview→tours, tour suivant, vidéo suivante)
 //   client → { action:'play' }                  host : lance la vidéo du tour courant
@@ -27,6 +28,7 @@
 const http = require('http');
 const { WebSocketServer } = require('ws');
 const engine = require('./engine-ban');
+const { cleanAvatar } = require('./avatar');
 
 // --- catalogue de vidéos ---------------------------------------------------
 // Priorité : VIDEOS_JSON (env inline — staging/tests) > CATALOGUE_URL (le
@@ -123,7 +125,7 @@ function onJoin(ws, { name, code, avatar }) {
     if (room.players.size >= CONFIG.MAX_PLAYERS) return sendError(ws, 'room pleine');
   }
   ws.room = room.code;
-  room.players.set(ws.id, { id: ws.id, name: cleanName, avatar: String(avatar || '🙂').slice(0, 4), ws, score: 0 });
+  room.players.set(ws.id, { id: ws.id, name: cleanName, avatar: cleanAvatar(avatar, '🙂'), ws, score: 0 });
   sendRoomState(room);
 }
 
@@ -297,7 +299,7 @@ function showResults(room) {
   const ranking = engine.roundRanking(r).map((e) => {
     const p = room.players.get(e.id);
     return {
-      id: e.id, name: p ? p.name : '?', avatar: p ? p.avatar : '🙂',
+      id: e.id, name: p ? p.name : '?', avatar: p ? p.avatar : cleanAvatar(null, '🙂'),
       time: e.time, points: e.points, overshoot: e.overshoot, skipped: !!e.skipped,
       delta: (e.time == null ? null : +(e.time - fatal).toFixed(3)),   // <0 = avant le mot (bien), >0 = dépassé
     };
