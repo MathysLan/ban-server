@@ -29,6 +29,7 @@ const http = require('http');
 const { WebSocketServer } = require('ws');
 const engine = require('./engine-ban');
 const { cleanAvatar } = require('./avatar');
+const presenceJoueurs = require('./presence');
 
 // --- catalogue de vidéos ---------------------------------------------------
 // Priorité : VIDEOS_JSON (env inline — staging/tests) > CATALOGUE_URL (le
@@ -87,6 +88,9 @@ const server = http.createServer((_req, res) => {
   res.end(JSON.stringify(body, null, 2));
 });
 const wss = new WebSocketServer({ server });
+// Présence applicative : un onglet gelé ne reste pas compté dans sa room (voir
+// presence.js). Le module ne fait que fermer le socket ; le départ habituel fait le reste.
+const presence = presenceJoueurs.attach(wss);
 
 const CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 function newCode() { let c; do { c = Array.from({ length: 4 }, () => CHARS[Math.floor(Math.random() * CHARS.length)]).join(''); } while (rooms.has(c)); return c; }
@@ -100,6 +104,7 @@ wss.on('connection', (ws) => {
   ws.id = 'p' + nextId++;
   ws.on('message', (raw) => {
     let m; try { m = JSON.parse(raw); } catch { return sendError(ws, 'JSON invalide'); }
+    if (presence.consume(ws, m)) return;   // { action: 'presence' } : jamais « action inconnue »
     if (m.action === 'join') onJoin(ws, m);
     else if (m.action === 'start') onStart(ws, m);
     else if (m.action === 'next') onNext(ws);

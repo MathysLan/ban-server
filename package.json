@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Serveur arbitre du Jeu du Ban (Node + ws)",
   "main": "src/server.js",
-  "scripts": { "start": "node src/server.js", "test": "node test-avatar.js && node test-engine.js && node test-e2e.js" },
+  "scripts": { "start": "node src/server.js", "test": "node test-avatar.js && node test-engine.js && node test-e2e.js && node test-presence.js" },
   "engines": { "node": ">=18" },
   "dependencies": { "ws": "^8.18.0" }
 }
